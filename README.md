@@ -77,21 +77,21 @@ Les résultats ont démontré que :
 
 ### Résultats Walk-Forward (3 folds, 3368 matchs)
 
-| Modèle | Mean Log Loss | Mean Accuracy |
-|--------|:---:|:---:|
-| Bookmaker (baseline) | **0.9739** | **53.9%** |
-| Random Forest | 0.9815 | 52.4% |
-| Logistic Regression (Sans xG) | 0.9861 | 52.9% |
-| Logistic Regression (Avec xG) | 1.0091 | 52.0% |
-| Baseline (fréquentiel) | 1.0711 | 44.1% |
+| Modèle | Mean Log Loss | Mean Brier | Mean Accuracy | Balanced Acc |
+|--------|:---:|:---:|:---:|:---:|
+| Bookmaker (baseline) | **0.9739** | **0.1931** | **53.9%** | **46.3%** |
+| Logistic Regression (Sans xG, Tuné) | 0.9845 | 0.1952 | 53.1% | 46.1% |
+| Random Forest (Sans xG, Tuné) | 1.0018 | 0.1951 | 52.9% | 46.3% |
+| Logistic Regression (Avec xG) | 1.0124 | 0.1976 | 51.8% | 45.3% |
+| Baseline (fréquentiel) | 1.0711 | 0.2160 | 44.1% | 33.3% |
 
 **Note sur les Expected Goals (xG)** : Les données xG historiques proviennent de [Understat](https://understat.com). Les tests indépendants menés montrent que l'intégration naïve des xG (moyennes roulantes) **n'améliore pas** les performances par rapport au modèle basé uniquement sur les buts réels et les points. L'Edge reste négatif.
 
-### Simulation de Paris (Value Betting 5% Edge - Modèle sans xG)
+### Simulation de Paris (Value Betting 5% Edge - Modèle final sans xG)
 
 | Fold | Paris | Profit | ROI |
 |------|:---:|:---:|:---:|
-| 1 | 820 | -89.93 U | -10.97% |
-| 2 | 713 | -36.00 U | -5.05% |
-| 3 | 693 | -22.09 U | -3.19% |
-| **Total** | **2226** | **-148.02 U** | **-6.65%** |
+| 1 | 818 | -113.02 U | -13.82% |
+| 2 | 703 | -52.86 U | -7.52% |
+| 3 | 644 | -4.69 U | -0.73% |
+| **Total** | **2165** | **-170.57 U** | **-7.88%** |

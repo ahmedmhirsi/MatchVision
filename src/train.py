@@ -5,6 +5,7 @@ import os
 import joblib
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss, accuracy_score, brier_score_loss, confusion_matrix, precision_score, recall_score, f1_score
 from evaluate import evaluate_model
@@ -149,14 +150,17 @@ if __name__ == "__main__":
         (int(n_samples * 0.8), n_samples)
     ]
     
+    log_grid = {'C': [0.1, 1.0, 10.0]}
+    rf_grid = {'n_estimators': [50, 100], 'max_depth': [3, 5]}
+    
     models = {
         "Baseline": BaselineModel(),
-        "Logistic_Regression_No_xG": LogisticRegression(max_iter=1000, random_state=42),
-        "Logistic_Regression_With_xG": LogisticRegression(max_iter=1000, random_state=42),
-        "Random_Forest": RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+        "Logistic_Regression_No_xG": GridSearchCV(LogisticRegression(max_iter=1000, random_state=42), log_grid, cv=3),
+        "Logistic_Regression_With_xG": GridSearchCV(LogisticRegression(max_iter=1000, random_state=42), log_grid, cv=3),
+        "Random_Forest": GridSearchCV(RandomForestClassifier(random_state=42), rf_grid, cv=3)
     }
     if has_lineups:
-        models["Logistic_Regression_With_Lineups"] = LogisticRegression(max_iter=1000, random_state=42)
+        models["Logistic_Regression_With_Lineups"] = GridSearchCV(LogisticRegression(max_iter=1000, random_state=42), log_grid, cv=3)
     
     fold_results = {name: [] for name in models.keys()}
     fold_results["Bookmaker"] = []
@@ -212,11 +216,19 @@ if __name__ == "__main__":
                 
             res = evaluate_fold(y_test, y_prob)
             fold_results[name].append(res)
-            print(f"{name:20s} - Log Loss: {res['log_loss']:.4f} | Acc: {res['accuracy']:.4f}")
+            print(f"{name:30s} - LL: {res['log_loss']:.4f} | Acc: {res['accuracy']:.4f} | Brier: {res['brier']:.4f} | BAcc: {res['bacc']:.4f}")
             
-            if name == "Logistic_Regression_With_xG":
+            # Sub-analysis by League (only for No_xG as representative)
+            if name == "Logistic_Regression_No_xG":
+                for league in test_df['League'].unique():
+                    league_mask = test_df['League'] == league
+                    if league_mask.sum() > 10:
+                        ll_league = log_loss(y_test[league_mask], y_prob[league_mask], labels=[0, 1, 2])
+                        print(f"    -> {league:15s}: LL {ll_league:.4f} ({league_mask.sum()} matchs)")
+                        
+            if name == "Logistic_Regression_No_xG":
                 # Tune threshold for draws using historical training data predictions
-                train_probs = model.predict_proba(X_train_xg)
+                train_probs = model.predict_proba(X_train_no_xg)
                 best_t = find_best_draw_threshold(y_train, train_probs[:, 1])
                 
                 # Apply on Test
@@ -241,7 +253,9 @@ if __name__ == "__main__":
     for name in fold_results.keys():
         lls = [r['log_loss'] for r in fold_results[name]]
         accs = [r['accuracy'] for r in fold_results[name]]
-        print(f"{name:20s} - Mean LL: {np.mean(lls):.4f} (std: {np.std(lls):.4f}) | Mean Acc: {np.mean(accs):.4f}")
+        briers = [r['brier'] for r in fold_results[name]]
+        baccs = [r['bacc'] for r in fold_results[name]]
+        print(f"{name:30s} - LL: {np.mean(lls):.4f} (±{np.std(lls):.4f}) | Acc: {np.mean(accs):.4f} | Brier: {np.mean(briers):.4f} | BAcc: {np.mean(baccs):.4f}")
         
     print("\n--- ANALYSE DES NULS (Régression Logistique) ---")
     for i, d in enumerate(draw_results):
