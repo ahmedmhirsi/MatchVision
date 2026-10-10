@@ -1,11 +1,17 @@
-pandas
-numpy
-scikit-learn
-xgboost
-lightgbm
-pyyaml
-joblib
-requests
+# ──── Core ────
+pandas>=2.0
+numpy>=1.24
+scikit-learn>=1.3
+joblib>=1.3
+pyyaml>=6.0
+requests>=2.31
 
-# Dev / Testing
-# pip install pytest
+# ──── Optional ML models (used in model comparison) ────
+xgboost>=2.0
+lightgbm>=4.0
+
+# ──── Data Sources ────
+understatapi>=0.7
+
+# ──── Testing ────
+pytest>=7.0

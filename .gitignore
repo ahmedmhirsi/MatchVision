@@ -42,5 +42,8 @@ secrets/
 Thumbs.db
 .DS_Store
 
-# ─── Reports (logs only, keep .json) ───
+# ─── Reports (keep JSON metrics, ignore logs) ───
 reports/*.log
+
+# ─── Pytest cache ───
+.pytest_cache/
