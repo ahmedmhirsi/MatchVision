@@ -1,0 +1,26 @@
+{
+    "Majority_Baseline": {
+        "log_loss": 17.781535671964466,
+        "brier_score": 0.3288888888888889,
+        "accuracy": 0.5066666666666667,
+        "balanced_accuracy": 0.3333333333333333
+    },
+    "Statistical_Baseline": {
+        "log_loss": 1.015294948527978,
+        "brier_score": 0.20417823129251703,
+        "accuracy": 0.5066666666666667,
+        "balanced_accuracy": 0.3333333333333333
+    },
+    "Logistic_Regression": {
+        "log_loss": 1.0123137786176495,
+        "brier_score": 0.2042333306697448,
+        "accuracy": 0.5,
+        "balanced_accuracy": 0.3315058479532164
+    },
+    "Random_Forest": {
+        "log_loss": 1.0006059879165548,
+        "brier_score": 0.20149741261098628,
+        "accuracy": 0.52,
+        "balanced_accuracy": 0.38635852451641933
+    }
+}

@@ -1,0 +1,12 @@
+paths:
+  raw_data: "data/raw/historical_matches.csv"
+  processed_matches: "data/processed/matches_features.csv"
+  models_dir: "models/"
+  reports_dir: "reports/"
+
+features:
+  numerical_cols: ['FTHG', 'FTAG', 'B365H', 'B365D', 'B365A']
+
+model:
+  target_col: "target"
+  seed: 42

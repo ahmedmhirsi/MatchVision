@@ -1,0 +1,32 @@
+{
+    "Majority_Baseline": {
+        "log_loss": 21.340697749200054,
+        "brier_score": 0.3947194719471947,
+        "accuracy": 0.4079207920792079,
+        "balanced_accuracy": 0.3333333333333333
+    },
+    "Statistical_Baseline": {
+        "log_loss": 1.0889686267652066,
+        "brier_score": 0.2199822004863281,
+        "accuracy": 0.4079207920792079,
+        "balanced_accuracy": 0.3333333333333333
+    },
+    "Logistic_Regression": {
+        "log_loss": 0.976558635261393,
+        "brier_score": 0.19383392708218072,
+        "accuracy": 0.5326732673267327,
+        "balanced_accuracy": 0.48339090536379414
+    },
+    "Random_Forest": {
+        "log_loss": 0.9732227266378137,
+        "brier_score": 0.19284539960253033,
+        "accuracy": 0.5366336633663367,
+        "balanced_accuracy": 0.4881528101256989
+    },
+    "Gradient_Boosting": {
+        "log_loss": 0.9880180481840755,
+        "brier_score": 0.19661323584377588,
+        "accuracy": 0.5168316831683168,
+        "balanced_accuracy": 0.4728127716861918
+    }
+}
