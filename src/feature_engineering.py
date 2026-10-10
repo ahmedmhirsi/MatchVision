@@ -97,6 +97,16 @@ def create_match_features(df):
             'xG_Advantage': home_stats['xG_diff_avg'] - away_stats['xG_diff_avg'],
         }
         
+        # Add optional lineup features if present
+        lineup_cols = [
+            'Home_Missing_Count', 'Away_Missing_Count',
+            'Home_Missing_Key_Players', 'Away_Missing_Key_Players',
+            'Home_Lineup_Continuity', 'Away_Lineup_Continuity'
+        ]
+        for col in lineup_cols:
+            if col in df.columns:
+                feature_row[col] = row[col]
+        
         # Add odds if they exist
         if 'B365H' in df.columns:
             feature_row['B365H'] = row['B365H']

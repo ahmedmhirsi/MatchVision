@@ -13,6 +13,7 @@ import pytest
 
 # Make src/ importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+from import_lineups import merge_lineup_data
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -178,6 +179,32 @@ class TestFeatureEngineering:
 # 3. Evaluation Metrics
 # ═══════════════════════════════════════════════════════════════════════════
 
+class TestLineupImport:
+    def test_merge_lineups(self):
+        cleaned_data = pd.DataFrame({
+            'Date': ['2024-08-16', '2024-08-17'],
+            'HomeTeam': ['Man United', 'Arsenal'],
+            'AwayTeam': ['Fulham', 'Wolves'],
+            'target': [0, 0]
+        })
+        lineup_data = pd.DataFrame({
+            'Date': ['2024-08-16'],
+            'HomeTeam': ['Man United'],
+            'AwayTeam': ['Fulham'],
+            'Home_Missing_Count': [2],
+            'Away_Missing_Count': [1],
+            'Home_Missing_Key_Players': [1],
+            'Away_Missing_Key_Players': [0],
+            'Home_Lineup_Continuity': [0.8],
+            'Away_Lineup_Continuity': [0.9]
+        })
+        merged = merge_lineup_data(cleaned_data, lineup_data)
+        assert len(merged) == 2
+        # Check that Man United got data
+        assert merged.loc[0, 'Home_Missing_Count'] == 2
+        # Check that Arsenal got defaults
+        assert merged.loc[1, 'Home_Missing_Count'] == 0
+        assert merged.loc[1, 'Home_Lineup_Continuity'] == 1.0
 class TestEvaluateFold:
     """Tests for the evaluate_fold function in train.py."""
 

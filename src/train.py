@@ -120,6 +120,16 @@ if __name__ == "__main__":
         'Away_xG_avg', 'Away_xGA_avg', 'Away_xG_diff_avg',
         'xG_Advantage'
     ]
+    
+    lineup_cols = [
+        'Home_Missing_Count', 'Away_Missing_Count',
+        'Home_Missing_Key_Players', 'Away_Missing_Key_Players',
+        'Home_Lineup_Continuity', 'Away_Lineup_Continuity'
+    ]
+    has_lineups = all(c in df.columns for c in lineup_cols)
+    if has_lineups:
+        feature_cols_lineups = feature_cols_xg + lineup_cols
+        
     target_col = 'target'
     
     # Define Walk-Forward Splits (Quarterly)
@@ -145,6 +155,8 @@ if __name__ == "__main__":
         "Logistic_Regression_With_xG": LogisticRegression(max_iter=1000, random_state=42),
         "Random_Forest": RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
     }
+    if has_lineups:
+        models["Logistic_Regression_With_Lineups"] = LogisticRegression(max_iter=1000, random_state=42)
     
     fold_results = {name: [] for name in models.keys()}
     fold_results["Bookmaker"] = []
@@ -163,6 +175,10 @@ if __name__ == "__main__":
         
         X_train_xg = train_df[feature_cols_xg]
         X_test_xg = test_df[feature_cols_xg]
+        
+        if has_lineups:
+            X_train_lineups = train_df[feature_cols_lineups]
+            X_test_lineups = test_df[feature_cols_lineups]
         
         print(f"Train window: {train_df['Date'].min().date()} to {train_df['Date'].max().date()} ({len(train_df)} matches)")
         print(f"Test window:  {test_df['Date'].min().date()} to {test_df['Date'].max().date()} ({len(test_df)} matches)")
@@ -184,6 +200,10 @@ if __name__ == "__main__":
                 model = CalibratedClassifierCV(estimator=base_model, method='isotonic', cv=3)
                 model.fit(X_train_xg, y_train)
                 y_prob = model.predict_proba(X_test_xg)
+            elif name == "Logistic_Regression_With_Lineups":
+                model = CalibratedClassifierCV(estimator=base_model, method='isotonic', cv=3)
+                model.fit(X_train_lineups, y_train)
+                y_prob = model.predict_proba(X_test_lineups)
             else:
                 # Calibrate strictly on training set internally
                 model = CalibratedClassifierCV(estimator=base_model, method='isotonic', cv=3)
