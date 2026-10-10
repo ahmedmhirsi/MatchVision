@@ -4,9 +4,9 @@ import yaml
 import os
 import joblib
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.metrics import log_loss, accuracy_score
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.metrics import log_loss, accuracy_score, brier_score_loss, confusion_matrix, precision_score, recall_score, f1_score
 from evaluate import evaluate_model
 import json
 
@@ -14,8 +14,85 @@ def load_config(config_path="config/config.yaml"):
     with open(config_path, "r") as f:
         return yaml.safe_load(f)
 
+class BaselineModel:
+    def __init__(self):
+        self.probs = None
+        self.classes_ = np.array([0, 1, 2])
+        
+    def fit(self, X, y):
+        counts = pd.Series(y).value_counts(normalize=True).sort_index()
+        self.probs = np.array([counts.get(0, 0.33), counts.get(1, 0.33), counts.get(2, 0.33)])
+        
+    def predict_proba(self, X):
+        return np.tile(self.probs, (X.shape[0], 1))
+        
+    def predict(self, X):
+        return np.argmax(self.predict_proba(X), axis=1)
+
+def evaluate_fold(y_true, y_prob):
+    y_pred = np.argmax(y_prob, axis=1)
+    ll = log_loss(y_true, y_prob, labels=[0, 1, 2])
+    acc = accuracy_score(y_true, y_pred)
+    bs = np.mean([brier_score_loss((y_true == c).astype(int), y_prob[:, c]) for c in range(3)])
+    
+    # Balanced Accuracy manually for 3 classes
+    recalls = []
+    for c in range(3):
+        mask = (y_true == c)
+        if np.sum(mask) > 0:
+            recalls.append(np.sum((y_pred == c) & mask) / np.sum(mask))
+    bacc = np.mean(recalls) if recalls else 0
+    
+    return {'log_loss': ll, 'accuracy': acc, 'brier': bs, 'bacc': bacc}
+
+def find_best_draw_threshold(y_true, draw_probs):
+    thresholds = np.linspace(0.20, 0.40, 21)
+    best_t = 0.33
+    best_f1 = -1
+    y_draw = (y_true == 1).astype(int)
+    
+    for t in thresholds:
+        pred_draw = (draw_probs >= t).astype(int)
+        precision = precision_score(y_draw, pred_draw, zero_division=0)
+        recall = recall_score(y_draw, pred_draw, zero_division=0)
+        f1 = f1_score(y_draw, pred_draw, zero_division=0)
+        if f1 > best_f1:
+            best_f1 = f1
+            best_t = t
+    return best_t
+
+def simulate_betting(df_test, probs_model):
+    """
+    Simulate a simple Value Betting strategy.
+    Bet 1 unit if Model Prob > Bookmaker Implied Prob * 1.05 (5% value threshold).
+    Returns ROI, number of bets, net profit.
+    """
+    net_profit = 0
+    bets = 0
+    
+    for idx, (i, row) in enumerate(df_test.iterrows()):
+        # Real outcomes
+        true_res = int(row['target'])
+        
+        # Bookmaker odds
+        odds = [row['B365H'], row['B365D'], row['B365A']]
+        book_probs = [row['Prob_H_implied'], row['Prob_D_implied'], row['Prob_A_implied']]
+        mod_probs = probs_model[idx]
+        
+        for c in range(3):
+            # If model sees > 5% edge over bookmaker implied probability
+            if mod_probs[c] > book_probs[c] * 1.05:
+                bets += 1
+                if true_res == c:
+                    net_profit += (odds[c] - 1) # Win: gain odds-1
+                else:
+                    net_profit -= 1 # Lose 1 unit
+                    
+    roi = (net_profit / bets * 100) if bets > 0 else 0
+    return bets, net_profit, roi
+
 if __name__ == "__main__":
-    print("Starting Training Pipeline with Calibration and Bookmaker Baseline...")
+    print("Starting Walk-Forward Backtesting Pipeline...")
     config = load_config()
     
     df = pd.read_csv(config['paths']['processed_matches'])
@@ -31,127 +108,122 @@ if __name__ == "__main__":
         df['Prob_A_implied'] /= margin
 
     df = df[df['Home_Pts_avg'] > 0].copy()
-    
-    df = df.sort_values('Date')
-    n_samples = len(df)
-    train_size = int(n_samples * 0.70)
-    val_size = int(n_samples * 0.15)
-    
-    train_df = df.iloc[:train_size]
-    val_df = df.iloc[train_size:train_size+val_size]
-    test_df = df.iloc[train_size+val_size:]
+    df = df.sort_values('Date').reset_index(drop=True)
     
     feature_cols = [
         'Home_Gls_Scored_avg', 'Home_Gls_Conceded_avg', 'Home_Pts_avg',
         'Away_Gls_Scored_avg', 'Away_Gls_Conceded_avg', 'Away_Pts_avg',
-        'Form_Advantage'
+        'Form_Advantage', 'Prob_H_implied', 'Prob_D_implied', 'Prob_A_implied'
     ]
-    if 'Prob_H_implied' in df.columns:
-        feature_cols.extend(['Prob_H_implied', 'Prob_D_implied', 'Prob_A_implied'])
-        
     target_col = 'target'
     
-    X_train, y_train = train_df[feature_cols], train_df[target_col]
-    X_val, y_val = val_df[feature_cols], val_df[target_col]
-    X_test, y_test = test_df[feature_cols], test_df[target_col]
+    # Define Walk-Forward Splits (Quarterly)
+    start_date = df['Date'].min()
+    end_date = df['Date'].max()
+    print(f"Dataset span: {start_date.date()} to {end_date.date()} ({len(df)} matches)")
     
-    print(f"Features used: {feature_cols}")
-    print(f"Train samples: {len(X_train)}, Val: {len(X_val)}, Test: {len(X_test)}")
+    # Let's create folds by time. E.g. every 6 months.
+    # Actually, let's use fixed train size and sliding window, or expanding window.
+    # Expanding window: Fold 1: train on first 40%, test on next 20%
+    # Fold 2: train on first 60%, test on next 20%
+    # Fold 3: train on first 80%, test on last 20%
+    n_samples = len(df)
+    splits = [
+        (int(n_samples * 0.4), int(n_samples * 0.6)),
+        (int(n_samples * 0.6), int(n_samples * 0.8)),
+        (int(n_samples * 0.8), n_samples)
+    ]
     
-    # 1. Evaluate Bookmaker Baseline
-    print("\n" + "="*50)
-    print("BOOKMAKER BASELINE (Implied Probabilities)")
-    print("="*50)
-    book_probs_test = test_df[['Prob_H_implied', 'Prob_D_implied', 'Prob_A_implied']].values
-    book_pred_test = np.argmax(book_probs_test, axis=1)
-    evaluate_model(y_test, book_probs_test, book_pred_test, model_name="Bookmaker_Baseline_Test")
-    
-    # 2. Train Models
     models = {
-        "Logistic_Regression": LogisticRegression(max_iter=1000, random_state=config['model']['seed']),
-        "Random_Forest": RandomForestClassifier(n_estimators=100, max_depth=5, random_state=config['model']['seed']),
-        "Gradient_Boosting": GradientBoostingClassifier(n_estimators=100, max_depth=3, random_state=config['model']['seed'])
+        "Baseline": BaselineModel(),
+        "Logistic_Regression": LogisticRegression(max_iter=1000, random_state=42),
+        "Random_Forest": RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
     }
     
-    best_model_name = ""
-    best_loss = float('inf')
-    best_calibrated_model = None
+    fold_results = {name: [] for name in models.keys()}
+    fold_results["Bookmaker"] = []
     
-    for name, model in models.items():
-        print(f"\n{'#'*50}\nTraining {name}...\n{'#'*50}")
-        model.fit(X_train, y_train)
+    betting_results = []
+    draw_results = []
+    
+    fold_idx = 1
+    for train_end, test_end in splits:
+        print(f"\n{'='*50}\nEvaluating Fold {fold_idx}\n{'='*50}")
+        train_df = df.iloc[:train_end]
+        test_df = df.iloc[train_end:test_end]
         
-        # Evaluate raw model on Validation
-        y_val_prob_raw = model.predict_proba(X_val)
-        y_val_pred_raw = model.predict(X_val)
-        metrics_val_raw = evaluate_model(y_val, y_val_prob_raw, y_val_pred_raw, model_name=f"{name}_Raw_Val")
+        X_train, y_train = train_df[feature_cols], train_df[target_col].values
+        X_test, y_test = test_df[feature_cols], test_df[target_col].values
         
-        # Calibrate using Isotonic on Training set via internal CV
-        calibrated_iso = CalibratedClassifierCV(estimator=model, method='isotonic', cv=3)
-        calibrated_iso.fit(X_train, y_train)
+        print(f"Train window: {train_df['Date'].min().date()} to {train_df['Date'].max().date()} ({len(train_df)} matches)")
+        print(f"Test window:  {test_df['Date'].min().date()} to {test_df['Date'].max().date()} ({len(test_df)} matches)")
         
-        y_test_prob_iso = calibrated_iso.predict_proba(X_test)
+        # 1. Bookmaker Baseline
+        book_probs_test = test_df[['Prob_H_implied', 'Prob_D_implied', 'Prob_A_implied']].values
+        res_book = evaluate_fold(y_test, book_probs_test)
+        fold_results["Bookmaker"].append(res_book)
         
-        test_ll = log_loss(y_test, y_test_prob_iso)
-        if test_ll < best_loss:
-            best_loss = test_ll
-            best_calibrated_model = calibrated_iso
-            best_model_name = f"{name}_Isotonic"
+        best_fold_model = None
+        best_fold_ll = float('inf')
+        
+        for name, base_model in models.items():
+            if name == "Baseline":
+                model = base_model
+                model.fit(X_train, y_train)
+                y_prob = model.predict_proba(X_test)
+            else:
+                # Calibrate strictly on training set internally
+                model = CalibratedClassifierCV(estimator=base_model, method='isotonic', cv=3)
+                model.fit(X_train, y_train)
+                y_prob = model.predict_proba(X_test)
+                
+            res = evaluate_fold(y_test, y_prob)
+            fold_results[name].append(res)
+            print(f"{name:20s} - Log Loss: {res['log_loss']:.4f} | Acc: {res['accuracy']:.4f}")
             
-        print("\n--- FINAL TEST PERFORMANCE ---")
-        evaluate_model(y_test, calibrated_iso.predict_proba(X_test), calibrated_iso.predict(X_test), model_name=f"{name}_Calibrated_Test")
-
+            if name == "Logistic_Regression":
+                # Tune threshold for draws using historical training data predictions
+                # Since we used cv=3 for calibration, we can't easily get out-of-fold probs for training.
+                # So we take the last 20% of the training set to evaluate threshold, WITHOUT refitting just for simplicity.
+                # To be absolutely strict: we evaluate threshold on train_df directly. 
+                # (Yes, it's evaluated in-sample for the calibrated model, but it's acceptable for a heuristic threshold, or we can use cross_val_predict).
+                train_probs = model.predict_proba(X_train)
+                best_t = find_best_draw_threshold(y_train, train_probs[:, 1])
+                
+                # Apply on Test
+                draw_pred_test = (y_prob[:, 1] >= best_t).astype(int)
+                y_test_draw = (y_test == 1).astype(int)
+                tp = np.sum((draw_pred_test == 1) & (y_test_draw == 1))
+                fp = np.sum((draw_pred_test == 1) & (y_test_draw == 0))
+                precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+                recall = tp / np.sum(y_test_draw) if np.sum(y_test_draw) > 0 else 0
+                draw_results.append({'threshold': best_t, 'precision': precision, 'recall': recall})
+                
+                # Betting Simulation
+                bets, profit, roi = simulate_betting(test_df, y_prob)
+                betting_results.append({'bets': bets, 'profit': profit, 'roi': roi})
+                
+        fold_idx += 1
+        
     print(f"\n\n{'*'*50}")
-    print(f"Best model based on Calibrated Test Log Loss: {best_model_name}")
+    print("WALK-FORWARD BACKTESTING RESULTS (Aggregated over 3 folds)")
     print(f"{'*'*50}")
     
-    # Analyze Draws on Test Set for the best model
-    probs_best = best_calibrated_model.predict_proba(X_test)
-    preds_best = best_calibrated_model.predict(X_test)
+    for name in fold_results.keys():
+        lls = [r['log_loss'] for r in fold_results[name]]
+        accs = [r['accuracy'] for r in fold_results[name]]
+        print(f"{name:20s} - Mean LL: {np.mean(lls):.4f} (std: {np.std(lls):.4f}) | Mean Acc: {np.mean(accs):.4f}")
+        
+    print("\n--- ANALYSE DES NULS (Régression Logistique) ---")
+    for i, d in enumerate(draw_results):
+        print(f"Fold {i+1}: Seuil Appris = {d['threshold']:.2f} -> Test Precision: {d['precision']:.2f}, Recall: {d['recall']:.2f}")
+        
+    print("\n--- SIMULATION DE PARIS (Value Betting 5% Edge - LogReg) ---")
+    total_bets = sum([b['bets'] for b in betting_results])
+    total_profit = sum([b['profit'] for b in betting_results])
+    overall_roi = (total_profit / total_bets * 100) if total_bets > 0 else 0
+    for i, b in enumerate(betting_results):
+        print(f"Fold {i+1}: Paris: {b['bets']}, Profit: {b['profit']:.2f} U, ROI: {b['roi']:.2f}%")
+    print(f"=> TOTAL: Paris: {total_bets}, Profit Net: {total_profit:.2f} Unités, ROI Global: {overall_roi:.2f}%")
     
-    draw_probs = probs_best[:, 1]
-    print("\n--- ANALYSE DES MATCHS NULS (Draw) ---")
-    print(f"Probabilité moyenne attribuée aux Nuls : {np.mean(draw_probs):.4f}")
-    print(f"Probabilité max attribuée aux Nuls : {np.max(draw_probs):.4f}")
-    print(f"Probabilité min attribuée aux Nuls : {np.min(draw_probs):.4f}")
-    
-    # Thresholding strategy (tested on validation set to find threshold)
-    # Let's find best threshold on validation
-    best_model_raw = best_calibrated_model.estimator # get raw
-    probs_val = best_calibrated_model.predict_proba(X_val)
-    draw_probs_val = probs_val[:, 1]
-    y_val_draw = (y_val == 1).astype(int)
-    
-    thresholds = [0.25, 0.28, 0.30, 0.33, 0.35]
-    best_thresh = 0.33
-    best_f1 = -1
-    
-    print("\nRecherche du meilleur seuil pour les nuls sur le set de Validation :")
-    for t in thresholds:
-        pred_draw_val = (draw_probs_val >= t).astype(int)
-        tp = np.sum((pred_draw_val == 1) & (y_val_draw == 1))
-        fp = np.sum((pred_draw_val == 1) & (y_val_draw == 0))
-        fn = np.sum((pred_draw_val == 0) & (y_val_draw == 1))
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
-        print(f" Seuil {t}: Precision={precision:.2f}, Recall={recall:.2f}, F1={f1:.2f}")
-        if f1 > best_f1:
-            best_f1 = f1
-            best_thresh = t
-            
-    print(f"\nApplication du seuil optimal ({best_thresh}) sur le Test Set :")
-    pred_draw_test = (draw_probs >= best_thresh).astype(int)
-    y_test_draw = (y_test == 1).astype(int)
-    tp = np.sum((pred_draw_test == 1) & (y_test_draw == 1))
-    fp = np.sum((pred_draw_test == 1) & (y_test_draw == 0))
-    fn = np.sum((pred_draw_test == 0) & (y_test_draw == 1))
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
-    
-    print(f" => Test Set (Nul) : Precision={precision:.2f}, Recall={recall:.2f}, F1={f1:.2f}")
-    
-    os.makedirs(config['paths']['models_dir'], exist_ok=True)
-    joblib.dump(best_calibrated_model, os.path.join(config['paths']['models_dir'], "best_calibrated_model.pkl"))
-    print("Training pipeline complete.")
+    print("\nWalk-Forward Pipeline complete.")
