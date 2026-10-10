@@ -1,9 +1,46 @@
+
+# ─── Data & Models (large / generated) ───
 data/
 models/
+*.pkl
+*.joblib
+*.h5
+
+# ─── Python ───
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ─── Virtual environments ───
 .env
-.venv
+.venv/
 env/
 venv/
+
+# ─── Secrets & tokens ───
+*.token
+*.secret
+*.pem
+*.key
+secrets/
+
+# ─── IDE ───
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── Jupyter ───
+.ipynb_checkpoints/
+
+# ─── OS ───
+Thumbs.db
+.DS_Store
+
+# ─── Reports (logs only, keep .json) ───
 reports/*.log

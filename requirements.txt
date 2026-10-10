@@ -5,3 +5,7 @@ xgboost
 lightgbm
 pyyaml
 joblib
+requests
+
+# Dev / Testing
+# pip install pytest
