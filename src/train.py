@@ -110,10 +110,15 @@ if __name__ == "__main__":
     df = df[df['Home_Pts_avg'] > 0].copy()
     df = df.sort_values('Date').reset_index(drop=True)
     
-    feature_cols = [
+    feature_cols_no_xg = [
         'Home_Gls_Scored_avg', 'Home_Gls_Conceded_avg', 'Home_Pts_avg',
         'Away_Gls_Scored_avg', 'Away_Gls_Conceded_avg', 'Away_Pts_avg',
         'Form_Advantage', 'Prob_H_implied', 'Prob_D_implied', 'Prob_A_implied'
+    ]
+    feature_cols_xg = feature_cols_no_xg + [
+        'Home_xG_avg', 'Home_xGA_avg', 'Home_xG_diff_avg',
+        'Away_xG_avg', 'Away_xGA_avg', 'Away_xG_diff_avg',
+        'xG_Advantage'
     ]
     target_col = 'target'
     
@@ -136,7 +141,8 @@ if __name__ == "__main__":
     
     models = {
         "Baseline": BaselineModel(),
-        "Logistic_Regression": LogisticRegression(max_iter=1000, random_state=42),
+        "Logistic_Regression_No_xG": LogisticRegression(max_iter=1000, random_state=42),
+        "Logistic_Regression_With_xG": LogisticRegression(max_iter=1000, random_state=42),
         "Random_Forest": RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
     }
     
@@ -152,8 +158,11 @@ if __name__ == "__main__":
         train_df = df.iloc[:train_end]
         test_df = df.iloc[train_end:test_end]
         
-        X_train, y_train = train_df[feature_cols], train_df[target_col].values
-        X_test, y_test = test_df[feature_cols], test_df[target_col].values
+        X_train_no_xg, y_train = train_df[feature_cols_no_xg], train_df[target_col].values
+        X_test_no_xg, y_test = test_df[feature_cols_no_xg], test_df[target_col].values
+        
+        X_train_xg = train_df[feature_cols_xg]
+        X_test_xg = test_df[feature_cols_xg]
         
         print(f"Train window: {train_df['Date'].min().date()} to {train_df['Date'].max().date()} ({len(train_df)} matches)")
         print(f"Test window:  {test_df['Date'].min().date()} to {test_df['Date'].max().date()} ({len(test_df)} matches)")
@@ -169,25 +178,25 @@ if __name__ == "__main__":
         for name, base_model in models.items():
             if name == "Baseline":
                 model = base_model
-                model.fit(X_train, y_train)
-                y_prob = model.predict_proba(X_test)
+                model.fit(X_train_no_xg, y_train)
+                y_prob = model.predict_proba(X_test_no_xg)
+            elif name == "Logistic_Regression_With_xG":
+                model = CalibratedClassifierCV(estimator=base_model, method='isotonic', cv=3)
+                model.fit(X_train_xg, y_train)
+                y_prob = model.predict_proba(X_test_xg)
             else:
                 # Calibrate strictly on training set internally
                 model = CalibratedClassifierCV(estimator=base_model, method='isotonic', cv=3)
-                model.fit(X_train, y_train)
-                y_prob = model.predict_proba(X_test)
+                model.fit(X_train_no_xg, y_train)
+                y_prob = model.predict_proba(X_test_no_xg)
                 
             res = evaluate_fold(y_test, y_prob)
             fold_results[name].append(res)
             print(f"{name:20s} - Log Loss: {res['log_loss']:.4f} | Acc: {res['accuracy']:.4f}")
             
-            if name == "Logistic_Regression":
+            if name == "Logistic_Regression_With_xG":
                 # Tune threshold for draws using historical training data predictions
-                # Since we used cv=3 for calibration, we can't easily get out-of-fold probs for training.
-                # So we take the last 20% of the training set to evaluate threshold, WITHOUT refitting just for simplicity.
-                # To be absolutely strict: we evaluate threshold on train_df directly. 
-                # (Yes, it's evaluated in-sample for the calibrated model, but it's acceptable for a heuristic threshold, or we can use cross_val_predict).
-                train_probs = model.predict_proba(X_train)
+                train_probs = model.predict_proba(X_train_xg)
                 best_t = find_best_draw_threshold(y_train, train_probs[:, 1])
                 
                 # Apply on Test

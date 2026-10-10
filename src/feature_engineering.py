@@ -16,30 +16,44 @@ def get_team_past_stats(df, team, date, n_matches=5):
         return {
             'goals_scored_avg': 0,
             'goals_conceded_avg': 0,
-            'points_avg': 0
+            'points_avg': 0,
+            'xG_avg': 0,
+            'xGA_avg': 0,
+            'xG_diff_avg': 0
         }
         
     goals_scored = 0
     goals_conceded = 0
     points = 0
+    xg = 0
+    xga = 0
     
     for _, match in past_matches.iterrows():
         if match['HomeTeam'] == team:
             goals_scored += match['FTHG']
             goals_conceded += match['FTAG']
+            xg += match.get('xG_h', match['FTHG'])
+            xga += match.get('xG_a', match['FTAG'])
             if match['target'] == 0: points += 3
             elif match['target'] == 1: points += 1
         else:
             goals_scored += match['FTAG']
             goals_conceded += match['FTHG']
+            xg += match.get('xG_a', match['FTAG'])
+            xga += match.get('xG_h', match['FTHG'])
             if match['target'] == 2: points += 3
             elif match['target'] == 1: points += 1
             
     num = len(past_matches)
+    xg_avg = xg / num
+    xga_avg = xga / num
     return {
         'goals_scored_avg': goals_scored / num,
         'goals_conceded_avg': goals_conceded / num,
-        'points_avg': points / num
+        'points_avg': points / num,
+        'xG_avg': xg_avg,
+        'xGA_avg': xga_avg,
+        'xG_diff_avg': xg_avg - xga_avg
     }
 
 def create_match_features(df):
@@ -68,12 +82,19 @@ def create_match_features(df):
             'Home_Gls_Scored_avg': home_stats['goals_scored_avg'],
             'Home_Gls_Conceded_avg': home_stats['goals_conceded_avg'],
             'Home_Pts_avg': home_stats['points_avg'],
+            'Home_xG_avg': home_stats['xG_avg'],
+            'Home_xGA_avg': home_stats['xGA_avg'],
+            'Home_xG_diff_avg': home_stats['xG_diff_avg'],
             
             'Away_Gls_Scored_avg': away_stats['goals_scored_avg'],
             'Away_Gls_Conceded_avg': away_stats['goals_conceded_avg'],
             'Away_Pts_avg': away_stats['points_avg'],
+            'Away_xG_avg': away_stats['xG_avg'],
+            'Away_xGA_avg': away_stats['xGA_avg'],
+            'Away_xG_diff_avg': away_stats['xG_diff_avg'],
             
             'Form_Advantage': home_stats['points_avg'] - away_stats['points_avg'],
+            'xG_Advantage': home_stats['xG_diff_avg'] - away_stats['xG_diff_avg'],
         }
         
         # Add odds if they exist

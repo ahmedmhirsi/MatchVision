@@ -19,8 +19,9 @@ pip install -r requirements.txt
 ## Utilisation (Pipeline Complet)
 
 ```bash
-# 1. Télécharger les données réelles
+# 1. Télécharger les données réelles et les xG
 py src/download_data.py
+py src/download_xg.py
 
 # 2. Nettoyer les données
 py src/data_cleaning.py
@@ -53,6 +54,7 @@ MatchVision/
 ├── reports/                  # Rapports JSON + logs
 ├── src/
 │   ├── download_data.py      # Téléchargement football-data.co.uk
+│   ├── download_xg.py        # Téléchargement historique xG (Understat)
 │   ├── data_cleaning.py      # Nettoyage et parsing des dates
 │   ├── feature_engineering.py # Features temporelles (rolling 5 matchs)
 │   ├── train.py              # Walk-Forward backtesting + simulation paris
@@ -79,14 +81,17 @@ Les résultats ont démontré que :
 |--------|:---:|:---:|
 | Bookmaker (baseline) | **0.9739** | **53.9%** |
 | Random Forest | 0.9815 | 52.4% |
-| Logistic Regression | 0.9861 | 52.9% |
+| Logistic Regression (Sans xG) | 0.9861 | 52.9% |
+| Logistic Regression (Avec xG) | 1.0091 | 52.0% |
 | Baseline (fréquentiel) | 1.0711 | 44.1% |
 
-### Simulation de Paris (Value Betting 5% Edge)
+**Note sur les Expected Goals (xG)** : Les données xG historiques proviennent de [Understat](https://understat.com). Les tests indépendants menés montrent que l'intégration naïve des xG (moyennes roulantes) **n'améliore pas** les performances par rapport au modèle basé uniquement sur les buts réels et les points. L'Edge reste négatif.
+
+### Simulation de Paris (Value Betting 5% Edge - Modèle sans xG)
 
 | Fold | Paris | Profit | ROI |
 |------|:---:|:---:|:---:|
-| 1 | 804 | -92.78 U | -11.54% |
-| 2 | 725 | -31.28 U | -4.31% |
-| 3 | 639 | -5.64 U | -0.88% |
-| **Total** | **2168** | **-129.70 U** | **-5.98%** |
+| 1 | 820 | -89.93 U | -10.97% |
+| 2 | 713 | -36.00 U | -5.05% |
+| 3 | 693 | -22.09 U | -3.19% |
+| **Total** | **2226** | **-148.02 U** | **-6.65%** |
